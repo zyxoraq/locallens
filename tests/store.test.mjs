@@ -75,3 +75,32 @@ test('synthetic evaluation retrieves each expected document in top 3',() => {
     }
   } finally { store.close(); }
 });
+
+test('document scope filters before LIMIT and never falls back to another document',() => {
+  const store = createStore();
+  try {
+    const noisy = store.add('quasar.md',Array.from({length:60},(_,i) => `Quasar quasar quasar ${i}. ${'observation '.repeat(20)}`).join('\n'));
+    const selected = store.add('quiet.md','A quasar is described in this selected document. Copper appears only here.');
+    const global = store.search('quasar',20);
+    assert.ok(global.some(source => source.documentId === noisy.id));
+    const scoped = store.search('quasar',1,selected.id);
+    assert.equal(scoped.length,1);
+    assert.equal(scoped[0].documentId,selected.id);
+    assert.equal(scoped[0].citation,'S1');
+    assert.deepEqual(store.search('copper',6,noisy.id),[]);
+    assert.equal(store.scope(selected.id).title,'quiet.md');
+    assert.deepEqual(store.scope(null),{documentId:null,title:'All documents'});
+    store.remove(selected.id);
+    assert.throws(() => store.search('quasar',6,selected.id),error => error.status === 404);
+  } finally { store.close(); }
+});
+
+test('invalid document scopes fail even when the query has no searchable terms',() => {
+  const store = createStore();
+  try {
+    for (const id of ['',123,{},[],false,'../notes.md',"' OR 1=1 --"]) {
+      assert.throws(() => store.search('the and',6,id),error => error.status === 400);
+    }
+    assert.throws(() => store.search('the',6,'00000000-0000-4000-8000-000000000000'),error => error.status === 404);
+  } finally { store.close(); }
+});

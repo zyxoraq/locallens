@@ -1,6 +1,6 @@
 {
   "name": "locallens",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "Local document search with line citations, SQLite FTS5 and optional Ollama answers",

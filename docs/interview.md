@@ -4,6 +4,8 @@
 
 Start from an empty library, add the sample data, search for `database backups`, and follow a result to its original line range. Import a small personal sample twice to demonstrate deduplication, then remove it and show that its terms no longer match. Run `node --test` and `node scripts/evaluate.mjs` to distinguish behavior checks from the tiny retrieval smoke dataset. Optional generation is a separate demonstration only when Ollama is actually available.
 
+Select `atlas-onboarding.md` in **Search in** and search for `backups`: this document has no matching passage, so results stay empty even though the runbook contains it. Return to **All documents**, search again and download a report. Edit the question input without submitting it: the report must still contain the original displayed question. This demonstrates scope correctness and a stable result snapshot.
+
 ## Questions you should be able to answer
 
 **Why BM25 instead of embeddings?** It works without a model download and offers transparent word matching. Its weakness is recall for synonyms, paraphrases, and cross-language queries. The implementation does not claim semantic understanding.
@@ -11,6 +13,12 @@ Start from an empty library, add the sample data, search for `database backups`,
 **Why chunks instead of whole documents?** Smaller passages are easier to inspect and fit inside a model context. Overlap reduces the chance that a relevant sentence is separated from its heading. It can also create duplicate results, which this version does not rerank away.
 
 **How do citations work?** Each segment remembers its original 1-based line number. Each chunk carries a line span and document ID. Search results receive temporary S1–S6 labels for that response. Generated labels are not proof that the model's statement follows from the text.
+
+**Why filter before LIMIT?** Filtering the global top six in the browser could discard all results for a selected document even when it has matching chunks. The SQL predicate restricts eligible rows before sorting/limiting. The shared FTS index still computes BM25 using corpus-wide statistics. The model only receives these filtered sources; the scope is not an authorization boundary.
+
+**How can highlighting be safe but incomplete?** A pure helper splits an excerpt into literal text segments and matching whole-word segments. The UI creates text nodes and `mark` elements. It never injects a decorated HTML string. Case-insensitive literal matching does not reproduce every normalization rule in SQLite FTS5, including diacritics.
+
+**What exactly does the report export?** A snapshot of the completed displayed result: submitted query, resolved scope, excerpts and citations, plus a displayed generated answer if present. It does not read the currently edited question or stale answer text from the page. New searches and library/scope changes invalidate old snapshots. Markdown code fences are longer than any backtick run inside the content, keeping excerpts and model text literal.
 
 **How is index consistency maintained?** Insert/delete triggers update the FTS index inside the same transaction as chunk writes. Foreign-key cascade removes chunks when a document is deleted. A persistence test reopens a disk database and searches it.
 

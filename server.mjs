@@ -10,6 +10,7 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const assets = new Map([
   ['/', ['index.html','text/html; charset=utf-8']],
   ['/app.js', ['app.js','text/javascript; charset=utf-8']],
+  ['/search-tools.mjs', ['search-tools.mjs','text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css','text/css; charset=utf-8']]
 ]);
 const MAX_BODY = 512_000;
@@ -77,18 +78,19 @@ export function createApp({ store = createStore(), model = '', ollamaUrl = 'http
         const body = await readJson(req);
         if (typeof body?.query !== 'string' || !body.query.trim()) throw new Error('Enter a search question.');
         const started = performance.now();
-        const sources = store.search(body.query);
+        const scope = store.scope(body.documentId === undefined ? null : body.documentId);
+        const sources = store.search(body.query, 6, scope.documentId);
         const elapsedMs = Number((performance.now() - started).toFixed(2));
-        if (url.pathname === '/api/search') return send(res,200,{ sources, elapsedMs, mode: 'search' });
+        if (url.pathname === '/api/search') return send(res,200,{ sources, elapsedMs, scope, mode: 'search' });
         if (!model) return send(res,409,{ error: 'Generation is disabled. Start the server with OLLAMA_MODEL to enable it.' });
-        if (!sources.length) return send(res,200,{ sources, elapsedMs, mode: 'no_sources', message: 'No matching source excerpts were found, so the model was not called. Try words used in your documents.' });
+        if (!sources.length) return send(res,200,{ sources, elapsedMs, scope, mode: 'no_sources', message: 'No matching source excerpts were found in the selected scope, so the model was not called. Try another keyword or choose All documents.' });
         if (generating) return send(res,429,{ error: 'A local answer is already running. Wait for it to finish.' });
         generating = true;
         try {
           const answer = await generate({ question: body.query, sources, model, endpoint });
-          return send(res,200,{ sources, elapsedMs, mode: 'generated', answer, model });
+          return send(res,200,{ sources, elapsedMs, scope, mode: 'generated', answer, model });
         } catch (error) {
-          return send(res,502,{ error: error.name === 'TimeoutError' ? 'The model took longer than 60 seconds. Your search results are still available.' : error.message, sources });
+          return send(res,502,{ error: error.name === 'TimeoutError' ? 'The model took longer than 60 seconds. Your search results are still available.' : error.message, sources, scope, elapsedMs });
         } finally { generating = false; }
       }
       send(res,404,{ error: 'Not found.' });

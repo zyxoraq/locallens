@@ -1,5 +1,7 @@
+import { highlightParts, formatSearchReport } from './search-tools.mjs';
+
 const $ = selector => document.querySelector(selector);
-const state = { generationEnabled: false, busy: false, documents: [], request: 0 };
+const state = { generationEnabled: false, busy: false, documents: [], request: 0, displayed: null };
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -20,6 +22,9 @@ async function api(route, { method = 'GET', body } = {}) {
   if (!response.ok) {
     const error = new Error(payload.error || `Request failed (${response.status}).`);
     error.sources = payload.sources;
+    error.scope = payload.scope;
+    error.elapsedMs = payload.elapsedMs;
+    error.status = response.status;
     throw error;
   }
   return payload;
@@ -34,13 +39,18 @@ function setBusy(busy, operation = 'search') {
   $('#results').setAttribute('aria-busy',String(busy));
   $('#file-input').disabled = busy;
   $('#load-demo').disabled = busy;
+  $('#document-scope').disabled = busy;
+  $('#export-report').disabled = busy || !state.displayed;
   for (const button of document.querySelectorAll('.delete-button')) button.disabled = busy;
 }
 
-function invalidateResults() {
+function invalidateResults(reason = 'Library updated') {
   state.request++;
+  state.displayed = null;
+  $('#export-report').disabled = true;
   $('#answer-panel').hidden = true;
-  $('#results-title').textContent = 'Library updated';
+  $('#result-context').hidden = true;
+  $('#results-title').textContent = reason;
   $('#result-meta').textContent = 'Run a search to refresh your excerpts';
   const empty = element('div','empty-state');
   empty.append(element('div','empty-icon','▤'),element('h3','','Your sources are ready.'),element('p','',state.documents.length ? 'Search your updated library to find a passage.' : 'Add a document or load the sample library to begin.'));
@@ -51,6 +61,15 @@ async function refreshDocuments() {
   const { documents } = await api('/api/documents');
   state.documents = documents;
   $('#document-count').textContent = documents.length;
+  const selector = $('#document-scope');
+  const selectedId = selector.value;
+  const all = element('option','','All documents'); all.value = '';
+  selector.replaceChildren(all);
+  for (const document of documents) {
+    const option = element('option','',document.title); option.value = document.id;
+    selector.append(option);
+  }
+  selector.value = documents.some(document => document.id === selectedId) ? selectedId : '';
   const list = $('#documents'); list.replaceChildren();
   if (!documents.length) list.append(element('p','muted','Your library is empty. Add a file or explore the demo.'));
   for (const document of documents) {
@@ -66,8 +85,9 @@ async function refreshDocuments() {
       setBusy(true,'library');
       try {
         await api(`/api/documents/${document.id}`,{ method:'DELETE' });
-        await refreshDocuments();
         invalidateResults();
+        if ($('#document-scope').value === document.id) $('#document-scope').value = '';
+        await refreshDocuments();
         notice('Document removed from the local index.');
       } catch (error) { notice(error.message,'error'); }
       finally { setBusy(false); }
@@ -86,7 +106,7 @@ async function viewDocument(id, startLine = 1) {
   } catch (error) { notice(error.message,'error'); }
 }
 
-function renderSources(sources, elapsedMs) {
+function renderSources(sources, elapsedMs, query) {
   $('#results-title').textContent = sources.length ? 'Found in your library' : 'No matching passages';
   $('#result-meta').textContent = `${sources.length} excerpt${sources.length === 1 ? '' : 's'}${elapsedMs === undefined ? '' : ` · ${elapsedMs} ms retrieval`}`;
   const list = $('#results'); list.replaceChildren();
@@ -105,20 +125,37 @@ function renderSources(sources, elapsedMs) {
     const inspect = element('button','','Open original ↗');
     inspect.addEventListener('click',() => viewDocument(source.documentId,source.startLine));
     footer.append(element('span','',`Lines ${source.startLine}–${source.endLine}`),inspect);
-    card.append(top,element('pre','',source.body),footer); list.append(card);
+    const excerpt = element('pre');
+    for (const part of highlightParts(source.body,query)) {
+      excerpt.append(part.match ? element('mark','query-match',part.text) : document.createTextNode(part.text));
+    }
+    card.append(top,excerpt,footer); list.append(card);
   }
+}
+
+function displayResult(query, result) {
+  renderSources(result.sources,result.elapsedMs,query);
+  state.displayed = structuredClone({
+    query, sources: result.sources, scope: result.scope, mode: result.mode,
+    answer: result.mode === 'generated' ? result.answer : undefined,
+    model: result.mode === 'generated' ? result.model : undefined,
+    message: result.message, capturedAt: new Date().toISOString()
+  });
+  $('#result-context').hidden = false;
+  $('#result-context').textContent = `Results for “${query}” · ${result.scope.title}`;
 }
 
 async function search(generated = false) {
   const query = $('#query').value.trim();
   if (!query || state.busy) return;
   if (!state.documents.length) return notice('Add documents or load the sample library first.');
-  notice(); setBusy(true,generated ? 'answer' : 'search'); $('#answer-panel').hidden = true;
+  const documentId = $('#document-scope').value || null;
+  notice(); invalidateResults('Searching your sources'); setBusy(true,generated ? 'answer' : 'search');
   const request = ++state.request;
   try {
-    const result = await api(generated ? '/api/answer' : '/api/search',{ method:'POST',body:{query} });
+    const result = await api(generated ? '/api/answer' : '/api/search',{ method:'POST',body:{query,documentId} });
     if (request !== state.request) return;
-    renderSources(result.sources,result.elapsedMs);
+    displayResult(query,result);
     if (result.message) notice(result.message);
     if (result.mode === 'generated' && result.answer) {
       $('#answer-panel').hidden = false;
@@ -126,7 +163,9 @@ async function search(generated = false) {
       $('#answer-model').textContent = result.model;
     }
   } catch (error) {
-    if (error.sources) renderSources(error.sources);
+    if (error.sources) displayResult(query,{ sources: error.sources, scope: error.scope, elapsedMs: error.elapsedMs, mode: 'search', message: `Generation failed: ${error.message}` });
+    else invalidateResults('Search could not finish');
+    if (error.status === 404 && documentId) await refreshDocuments().catch(() => {});
     notice(error.message,'error');
   } finally { setBusy(false); }
 }
@@ -146,8 +185,8 @@ async function importFiles(files) {
       result.duplicate ? duplicates++ : added++;
     } catch (error) { errors.push(`${file.name}: ${error.message}`); }
   }
-  await refreshDocuments();
   if (added) invalidateResults();
+  await refreshDocuments();
   notice(`${added} document(s) added${duplicates ? `; ${duplicates} duplicate(s) skipped` : ''}.${errors.length ? ` ${errors.join('. ')}` : ''}`,errors.length ? 'error' : 'info');
   $('#file-input').value = '';
   } finally { setBusy(false); }
@@ -155,6 +194,20 @@ async function importFiles(files) {
 
 $('#search-form').addEventListener('submit',event => { event.preventDefault(); search(); });
 $('#generate-button').addEventListener('click',() => search(true));
+$('#document-scope').addEventListener('change',() => {
+  if (state.busy) return;
+  invalidateResults('Search scope changed');
+  notice('Scope updated. Run a search to find passages in the selected documents.');
+});
+$('#export-report').addEventListener('click',() => {
+  if (state.busy || !state.displayed) return;
+  const report = new Blob([formatSearchReport(state.displayed)],{ type:'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(report);
+  const download = element('a');
+  download.href = url; download.download = `locallens-report-${state.displayed.capturedAt.slice(0,10)}.md`;
+  document.body.append(download); download.click(); download.remove();
+  setTimeout(() => URL.revokeObjectURL(url),1000);
+});
 $('#close-dialog').addEventListener('click',() => $('#document-dialog').close());
 $('#file-input').addEventListener('change',event => importFiles([...event.target.files]).catch(error => notice(error.message,'error')));
 const dropZone = $('#drop-zone');
@@ -166,8 +219,8 @@ $('#load-demo').addEventListener('click',async () => {
   setBusy(true,'library');
   try {
     const { added } = await api('/api/demo',{ method:'POST',body:{} });
-    await refreshDocuments();
     if (added) invalidateResults();
+    await refreshDocuments();
     notice(added ? 'Sample library added. These documents describe a fictional team.' : 'The sample documents are already in your library.');
     $('#query').focus();
   } catch (error) { notice(error.message,'error'); }
