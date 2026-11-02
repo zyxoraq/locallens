@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Find the right passage in your local documents. Search, inspect the source, and optionally ask a local language model."><title>LocalLens · Your knowledge, in focus</title><link rel="stylesheet" href="/styles.css"><script type="module" src="/app.js"></script></head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="LocalLens home"><span class="brand-icon">⌘</span> LocalLens<span class="edition">01</span></a>
+      <div class="library-heading"><span class="eyebrow">YOUR LIBRARY</span><span id="document-count" class="count">0</span></div>
+      <label class="upload" id="drop-zone" for="file-input"><span class="upload-icon">＋</span><strong>Add your documents</strong><span>Drop .txt or .md files here</span><small>Up to 250 KB each · stored locally</small><input id="file-input" type="file" accept=".md,.txt,text/plain,text/markdown" multiple></label>
+      <div id="documents" class="documents"><p class="muted">Your library is empty. Add a file or explore the demo.</p></div>
+      <button id="load-demo" class="demo-button"><span>◇</span> Explore a sample library <span>↗</span></button>
+      <p class="sample-note">Demo documents describe a fictional team.</p>
+      <div class="sidebar-footer"><span class="status-dot"></span><div><strong>Local by design</strong><p>Files stay in your local SQLite database.</p></div></div>
+    </aside>
+    <main>
+      <header class="topbar"><span>WORKSPACE <span class="slash">/</span> Document search</span><span class="offline-badge" id="mode-badge">● Connecting</span></header>
+      <section class="workspace">
+        <div class="hero"><p class="eyebrow">A CLEARER WAY TO FIND THINGS</p><h1>Your knowledge,<br><span>in focus.</span></h1><p class="subtitle">Ask a question. Find the original passage.<br>Every result leads back to its source.</p><div class="orb" aria-hidden="true"><div></div></div></div>
+        <form id="search-form" class="search-box"><label class="sr-only" for="query">Search your documents</label><span class="search-icon" aria-hidden="true">⌕</span><input id="query" type="search" maxlength="500" placeholder="What would you like to find?" autocomplete="off" required><button id="search-button" type="submit">Search <span>↗</span></button></form>
+        <div class="search-options"><span>LEXICAL SEARCH · BM25</span><button id="generate-button" type="button" disabled title="Set OLLAMA_MODEL when starting the server">✧ Ask local model</button></div>
+        <div id="suggestions" class="suggestions" aria-label="Example searches"></div>
+        <div id="status" class="notice" role="status" aria-live="polite" hidden></div>
+        <section id="answer-panel" class="answer-panel" aria-labelledby="answer-title" hidden><div class="section-heading"><h2 id="answer-title">Local model answer</h2><span id="answer-model" class="tag"></span></div><p class="warning">Generated text can be wrong. Check each claim against the excerpts below.</p><p id="answer-text"></p></section>
+        <section class="results-section" aria-labelledby="results-title"><div class="section-heading"><h2 id="results-title">Start with a source</h2><span id="result-meta" class="muted">Private. Searchable. Yours.</span></div><div id="results"><div class="empty-state"><div class="empty-icon">▤</div><h3>Good answers begin with good sources.</h3><p>Add your notes, documentation or a reading list.<br>Or load the sample library and try a question.</p><div class="feature-row"><span>01 &nbsp; Import text</span><span>02 &nbsp; Find passages</span><span>03 &nbsp; Check sources</span></div></div></div></section>
+        <footer class="main-footer"><span>Built for your notes, not the cloud.</span><span>LocalLens <span class="footer-star">✳</span></span></footer>
+      </section>
+    </main>
+  </div>
+  <dialog id="document-dialog"><div class="dialog-header"><div><span class="eyebrow">ORIGINAL DOCUMENT</span><h2 id="document-title"></h2></div><button id="close-dialog" class="icon-button" aria-label="Close document">×</button></div><pre id="document-content"></pre></dialog>
+</body>
+</html>
